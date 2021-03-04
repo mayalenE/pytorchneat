@@ -3,7 +3,7 @@ import neat
 import os
 import torch
 import torchvision
-from morphosearch.pytorchneat import selfconnectiongenome, rnn, activations, aggregations
+from pytorchneat import selfconnectiongenome, rnn, activations, aggregations
 from morphosearch.utils.sampling import set_seed
 from morphosearch.utils import cppn_utils
 import matplotlib.pyplot as plt
@@ -21,58 +21,6 @@ def delphineat_sigmoid_activation(z):
 
 
 class TestRecurrentNetwork(TestCase):
-    def test_pytorchneat_differentiability(self):
-
-        set_seed(0)
-
-        # load test configuration
-        config_path = os.path.join(os.path.dirname(__file__), 'test_neat.cfg')
-        neat_config = neat.Config(
-            selfconnectiongenome.SelfConnectionGenome,
-            neat.DefaultReproduction,
-            neat.DefaultSpeciesSet,
-            neat.DefaultStagnation,
-            config_path
-        )
-
-        # add custom activation functions for python-neat version:
-        neat_config.genome_config.add_activation('delphineat_gauss', delphineat_gauss_activation)
-        neat_config.genome_config.add_activation('delphineat_sigmoid', delphineat_sigmoid_activation)
-
-        # create the cppn input (image_height, image_width,num_inputs)
-        img_height = 28
-        img_width = 28
-        cppn_input = cppn_utils.create_image_cppn_input((img_height, img_width))
-
-        # create a genome
-        for net_idx in range(20):
-            genome = neat_config.genome_type(0)
-            genome.configure_new(neat_config.genome_config)
-
-            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config)
-
-            opt = torch.optim.Adam(pytorch_cppn.parameters(), 0.005)
-            mnist_dataset = torchvision.datasets.MNIST(root="/home/mayalen/data/pytorch_datasets/mnist/", download=False)
-            target_img = mnist_dataset.data[1].float()
-            print(target_img.dtype)
-            train_losses = []
-            for train_step in range(500):
-                pytorch_cppn_output = pytorch_cppn.activate(cppn_input, 2)
-                pytorch_cppn_output = (1.0 - pytorch_cppn_output.abs()).view(img_height, img_width)
-                loss = (target_img - pytorch_cppn_output).pow(2).sum().sqrt()
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                train_losses.append(loss.item())
-
-            plt.plot(train_losses)
-            plt.show()
-            plt.imshow(pytorch_cppn_output.cpu().detach(), cmap='gray')
-            plt.axis('off')
-            plt.show()
-
-        return
-
 
     def test_pytorchneat_vs_pythonneat(self):
         """

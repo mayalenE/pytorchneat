@@ -1,7 +1,8 @@
 import torch
 torch.set_default_dtype(torch.float64)
-from morphosearch.pytorchneat.activations import str_to_activation
-from morphosearch.pytorchneat.aggregations import str_to_aggregation
+from pytorchneat.activations import str_to_activation
+from pytorchneat.aggregations import str_to_aggregation
+from numbers import Number
 
 def str_to_tuple_key(str_key):
     return (int(str_key.split(",")[0]), int(str_key.split(",")[1]))
@@ -30,7 +31,10 @@ class RecurrentNetwork(torch.nn.Module):
         # connection parameters
         connections_with_str_keys = dict() # torch accept only str as parameter name and not Tuple of int
         for k, v in connections.items():
-            connections_with_str_keys[tuple_to_str_key(k)] = torch.nn.Parameter(torch.tensor(v))
+            try:
+                connections_with_str_keys[tuple_to_str_key(k)] = torch.nn.Parameter(torch.tensor(v))
+            except:
+                print('break')
         self.connections = torch.nn.ParameterDict(connections_with_str_keys)
 
         # node parameters : just list where ids are node keys
@@ -141,5 +145,7 @@ class RecurrentNetwork(torch.nn.Module):
         for (from_id, to_id), connection in genome.connections.items():
             if connection.enabled:
                 connections[(from_id, to_id)] = connection.weight
+            else:
+                del connections[(from_id, to_id)]
 
         return RecurrentNetwork(input_neuron_ids, hidden_neuron_ids, output_neuron_ids, biases, responses, activations, aggregations, connections)
