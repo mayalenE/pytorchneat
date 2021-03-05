@@ -45,6 +45,10 @@ class TestRecurrentNetwork(TestCase):
         upscale_target_tansform = transforms.Compose([transforms.ToPILImage(), transforms.Resize((img_height, img_width)), transforms.ToTensor()])
 
         for mnist_target_idx in range(1,21):
+            if not os.path.exists('test_differentiability_outputs'):
+                os.makedirs('test_differentiability_outputs')
+            if not os.path.exists('test_differentiability_outputs/mnist_targets'):
+                os.makedirs('test_differentiability_outputs/mnist_targets')
             cur_output_dir = f'test_differentiability_outputs/mnist_targets/target_{mnist_target_idx}'
             if not os.path.exists(cur_output_dir):
                 os.makedirs(cur_output_dir)

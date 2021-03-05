@@ -32,7 +32,7 @@ class TestRecurrentNetwork(TestCase):
 
         num_networks = 20
         recurrent_net_passes = 4
-        show_plots = False
+        show_plots = True
 
         # load test configuration
         config_path = os.path.join(os.path.dirname(__file__), 'test_neat.cfg')
