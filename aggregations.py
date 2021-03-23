@@ -1,16 +1,9 @@
-# Adapted from https://github.com/uber-research/PyTorch-NEAT
-
-from functools import reduce
-from operator import mul
-
-
+import torch
 def sum_aggregation(inputs):
-    return sum(inputs)
-
+    return torch.sum(inputs, -1, dtype=inputs.dtype)
 
 def product_aggregation(inputs):
-    return reduce(mul, inputs, 1)
-
+    return torch.prod(inputs, -1, dtype=inputs.dtype)
 
 str_to_aggregation = {
     'sum': sum_aggregation,
