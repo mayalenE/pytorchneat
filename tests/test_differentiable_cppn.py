@@ -5,10 +5,10 @@ import torch
 import torchvision
 from torchvision import transforms
 from pytorchneat import selfconnectiongenome, rnn, activations, aggregations
-from morphosearch.utils.sampling import set_seed
-from morphosearch.utils import cppn_utils
+from utils import create_image_cppn_input
 import matplotlib.pyplot as plt
 import math
+import time
 
 
 def delphineat_gauss_activation(z):
@@ -20,12 +20,9 @@ def delphineat_sigmoid_activation(z):
     return 2.0 * (1.0 / (1.0 + math.exp(-z*5)))-1
 
 
-
-
 class TestRecurrentNetwork(TestCase):
     def test_pytorchneat_differentiability(self):
 
-        set_seed(0)
         config_path = os.path.join(os.path.dirname(__file__), 'test_neat.cfg')
         neat_config = neat.Config(
             selfconnectiongenome.SelfConnectionGenome,
@@ -40,7 +37,7 @@ class TestRecurrentNetwork(TestCase):
         # create the cppn input (image_height, image_width,num_inputs)
         img_height = 56
         img_width = 56
-        cppn_input = cppn_utils.create_image_cppn_input((img_height, img_width))
+        cppn_input = create_image_cppn_input((img_height, img_width))
         mnist_dataset = torchvision.datasets.MNIST(root="/home/mayalen/data/pytorch_datasets/mnist/", download=False, train=True)
         upscale_target_tansform = transforms.Compose([transforms.ToPILImage(), transforms.Resize((img_height, img_width)), transforms.ToTensor()])
 
@@ -65,7 +62,8 @@ class TestRecurrentNetwork(TestCase):
                 genomes_train_losses = []
                 genomes_train_images = []
 
-                for _, genome in genomes:
+                for genome_idx, genome in genomes:
+                    t0 = time.time()
                     cppn_net = rnn.RecurrentNetwork.create(genome, neat_config)
                     opt = torch.optim.Adam(cppn_net.parameters(), 1e-2)
                     train_losses = []
@@ -79,6 +77,8 @@ class TestRecurrentNetwork(TestCase):
                         opt.step()
                         train_losses.append(loss.item())
                         train_images.append(cppn_net_output.cpu().detach().unsqueeze(0))
+                    t1 = time.time()
+                    print(f"Training genome {genome_idx} took {t1-t0} secs")
 
                     genome.fitness = - train_losses[-1]
                     plt.figure()

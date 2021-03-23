@@ -2,13 +2,11 @@ from unittest import TestCase
 import neat
 import os
 import torch
-import torchvision
-from pytorchneat import selfconnectiongenome, rnn, activations, aggregations
-from morphosearch.utils.sampling import set_seed
-from morphosearch.utils import cppn_utils
+from pytorchneat import selfconnectiongenome, rnn
+from utils import create_image_cppn_input
 import matplotlib.pyplot as plt
 import math
-
+import time
 
 def delphineat_gauss_activation(z):
     '''Gauss activation as defined by SharpNEAT, which is also as in DelphiNEAT.'''
@@ -27,8 +25,6 @@ class TestRecurrentNetwork(TestCase):
         Given the test_neat.cfg, create a number of random networks 
         and test if the neat rnn and the pytorch rnn generate the same output for each
         """
-
-        set_seed(0)
 
         num_networks = 20
         recurrent_net_passes = 4
@@ -51,7 +47,7 @@ class TestRecurrentNetwork(TestCase):
         # create the cppn input (image_height, image_width,num_inputs)
         img_height = 50
         img_width = 50
-        cppn_input = cppn_utils.create_image_cppn_input((img_height, img_width)) # here input for each pixel location is b=1,x,y,d
+        cppn_input = create_image_cppn_input((img_height, img_width)) # here input for each pixel location is b=1,x,y,d
 
         for net_idx in range(num_networks):
 
@@ -61,13 +57,15 @@ class TestRecurrentNetwork(TestCase):
             ## required interface to configure a new genome (itself) based on the given configuration object
             genome.configure_new(neat_config.genome_config)
 
-            # Pytorch-Neat Output
+            t0 = time.time()
             pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config)
             # in pytorch cppn, the activate functions takes an input:
             ## the cppn input of size (N, num_inputs) and activate for each of the N locations
             ## the number of passes in the cppn recurrent network
             pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
             pytorch_cppn_output = (1.0 - pytorch_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            t1 = time.time()
+            print(f"Pytorch CPPN calculation took {t1-t0} secs")
 
             # Python-Neat Output
             neat_cppn = neat.nn.RecurrentNetwork.create(genome, neat_config)
@@ -78,6 +76,8 @@ class TestRecurrentNetwork(TestCase):
                 for _ in range(recurrent_net_passes):
                     neat_cppn_output[idx, :] = neat_cppn.activate(input)[0]
             neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            t2 = time.time()
+            print(f"NEAT CPPN calculation took {t2 - t1} secs")
 
             assert torch.allclose(neat_cppn_output, pytorch_cppn_output) # returns True if two tensors are element-wise equal within a tolerance.
             if show_plots:
