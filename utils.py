@@ -14,7 +14,4 @@ def create_image_cppn_input(output_size, is_distance_to_center=True, is_bias=Tru
     if is_bias:
         cppn_input = torch.cat([cppn_input, torch.ones(output_size).unsqueeze(-1)], -1)
 
-    n_inputs = len(output_size) + int(is_distance_to_center) + int(is_bias)
-    cppn_input = cppn_input.view(-1, n_inputs)
-
     return cppn_input

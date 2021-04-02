@@ -1,9 +1,10 @@
 from unittest import TestCase
 import neat
+import pytorchneat
 import os
 import torch
 from pytorchneat import selfconnectiongenome, rnn
-from utils import create_image_cppn_input
+from pytorchneat.utils import create_image_cppn_input
 import matplotlib.pyplot as plt
 import math
 import time
@@ -26,10 +27,9 @@ class TestRecurrentNetwork(TestCase):
         and test if the neat rnn and the pytorch rnn generate the same output for each
         """
 
-        num_networks = 20
+        num_networks = 5
         recurrent_net_passes = 4
-        show_plots = True
-
+        show_plots = False
         # load test configuration
         config_path = os.path.join(os.path.dirname(__file__), 'test_neat.cfg')
         neat_config = neat.Config(
@@ -58,35 +58,75 @@ class TestRecurrentNetwork(TestCase):
             genome.configure_new(neat_config.genome_config)
 
             t0 = time.time()
-            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config)
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cpu')
             # in pytorch cppn, the activate functions takes an input:
             ## the cppn input of size (N, num_inputs) and activate for each of the N locations
             ## the number of passes in the cppn recurrent network
             pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
-            pytorch_cppn_output = (1.0 - pytorch_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            pytorch_cppn_output_1 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
             t1 = time.time()
-            print(f"Pytorch CPPN calculation took {t1-t0} secs")
+            print(f"Pytorch vectorized RNN CPU calculation took {t1-t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cuda')
+            # in pytorch cppn, the activate functions takes an input:
+            ## the cppn input of size (N, num_inputs) and activate for each of the N locations
+            ## the number of passes in the cppn recurrent network
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_2 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch vectorized RNN GPU calculation took {t1-t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cpu')
+            # in pytorch cppn, the activate functions takes an input:
+            ## the cppn input of size (N, num_inputs) and activate for each of the N locations
+            ## the number of passes in the cppn recurrent network
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_3 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN CPU calculation took {t1-t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cuda')
+            # in pytorch cppn, the activate functions takes an input:
+            ## the cppn input of size (N, num_inputs) and activate for each of the N locations
+            ## the number of passes in the cppn recurrent network
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_4 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN GPU calculation took {t1 - t0} secs")
+
 
             # Python-Neat Output
+            t0 = time.time()
             neat_cppn = neat.nn.RecurrentNetwork.create(genome, neat_config)
             # the activate function must be applied at each pixel location
             neat_cppn_output = torch.zeros((img_height*img_width, neat_config.genome_config.num_outputs))
-            for idx, input in enumerate(cppn_input):
+            for idx, input in enumerate(cppn_input.view(-1, cppn_input.shape[-1])):
                 neat_cppn.reset()
                 for _ in range(recurrent_net_passes):
                     neat_cppn_output[idx, :] = neat_cppn.activate(input)[0]
-            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width)
-            t2 = time.time()
-            print(f"NEAT CPPN calculation took {t2 - t1} secs")
+            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width, 1)
+            t1 = time.time()
+            print(f"NEAT CPPN calculation took {t1 - t0} secs")
 
-            assert torch.allclose(neat_cppn_output, pytorch_cppn_output) # returns True if two tensors are element-wise equal within a tolerance.
+            assert torch.allclose(pytorch_cppn_output_1, pytorch_cppn_output_2) # returns True if two tensors are element-wise equal within a tolerance.
+            assert torch.allclose(pytorch_cppn_output_3, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, neat_cppn_output)
+            assert torch.allclose(pytorch_cppn_output_4, neat_cppn_output)
             if show_plots:
-                fig = plt.subplots(1,2)
-                plt.subplot(121)
-                plt.imshow(pytorch_cppn_output, cmap='gray')
+                fig = plt.subplots(1,3)
+                plt.subplot(131)
+                plt.imshow(pytorch_cppn_output_2, cmap='gray')
                 plt.axis("off")
-                plt.title("Pytorch-Neat")
-                plt.subplot(122)
+                plt.title("Pytorch-Neat Vectorized")
+                plt.subplot(132)
+                plt.imshow(pytorch_cppn_output_4, cmap='gray')
+                plt.axis("off")
+                plt.title("Pytorch-Neat Distributed")
+                plt.subplot(133)
                 plt.imshow(neat_cppn_output, cmap='gray')
                 plt.axis("off")
                 plt.title("Python-Neat")
@@ -110,28 +150,62 @@ class TestRecurrentNetwork(TestCase):
                 del genome.connections[key]
 
             # test its outputs
-            # Pytorch-Neat Output
-            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config)
+            t0 = time.time()
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cpu')
             pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
-            pytorch_cppn_output = (1.0 - pytorch_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            pytorch_cppn_output_1 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch vectorized RNN CPU calculation took {t1 - t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cuda')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_2 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch vectorized RNN GPU calculation took {t1 - t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cpu')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_3 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN CPU calculation took {t1 - t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cuda')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_4 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN GPU calculation took {t1 - t0} secs")
 
             # Python-Neat Output
+            t0 = time.time()
             neat_cppn = neat.nn.RecurrentNetwork.create(genome, neat_config)
             neat_cppn_output = torch.zeros((img_height * img_width, neat_config.genome_config.num_outputs))
-            for idx, input in enumerate(cppn_input):
+            for idx, input in enumerate(cppn_input.view(-1, cppn_input.shape[-1])):
                 neat_cppn.reset()
                 for _ in range(recurrent_net_passes):
                     neat_cppn_output[idx, :] = neat_cppn.activate(input)[0]
-            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width, 1)
+            t1 = time.time()
+            print(f"NEAT CPPN calculation took {t1 - t0} secs")
 
-            assert torch.allclose(neat_cppn_output, pytorch_cppn_output)
+            assert torch.allclose(pytorch_cppn_output_1,pytorch_cppn_output_2)
+            assert torch.allclose(pytorch_cppn_output_3, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, neat_cppn_output)
+            assert torch.allclose(pytorch_cppn_output_4, neat_cppn_output)
             if show_plots:
-                fig = plt.subplots(1, 2)
-                plt.subplot(121)
-                plt.imshow(pytorch_cppn_output, cmap='gray')
+                fig = plt.subplots(1, 3)
+                plt.subplot(131)
+                plt.imshow(pytorch_cppn_output_2, cmap='gray')
                 plt.axis("off")
-                plt.title("1 node without input connections: Pytorch-Neat")
-                plt.subplot(122)
+                plt.title("Pytorch-Neat Vectorized")
+                plt.subplot(132)
+                plt.imshow(pytorch_cppn_output_4, cmap='gray')
+                plt.axis("off")
+                plt.title("Pytorch-Neat Distributed")
+                plt.subplot(133)
                 plt.imshow(neat_cppn_output, cmap='gray')
                 plt.axis("off")
                 plt.title("Python-Neat")
@@ -148,26 +222,63 @@ class TestRecurrentNetwork(TestCase):
             genome.connections.clear()
 
             # test its outputs
-            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config)
+            t0 = time.time()
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cpu')
             pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
-            pytorch_cppn_output = (1.0 - pytorch_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            pytorch_cppn_output_1 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch vectorized RNN CPU calculation took {t1-t0} secs")
 
+            t0 = time.time()
+            pytorch_cppn = rnn.RecurrentNetwork.create(genome, neat_config, device='cuda')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_2 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch vectorized RNN GPU calculation took {t1-t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cpu')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_3 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN CPU calculation took {t1-t0} secs")
+
+            t0 = time.time()
+            pytorch_cppn = pytorchneat.rnn.RecurrentNetworkAgg.create(genome, neat_config, device='cuda')
+            pytorch_cppn_output = pytorch_cppn.activate(cppn_input, recurrent_net_passes)
+            pytorch_cppn_output_4 = (1.0 - pytorch_cppn_output.abs()).cpu().detach()
+            t1 = time.time()
+            print(f"Pytorch distributed RNN GPU calculation took {t1 - t0} secs")
+
+
+            # Python-Neat Output
+            t0 = time.time()
             neat_cppn = neat.nn.RecurrentNetwork.create(genome, neat_config)
-            neat_cppn_output = torch.zeros((img_height * img_width, neat_config.genome_config.num_outputs))
-            for idx, input in enumerate(cppn_input):
+            neat_cppn_output = torch.zeros((img_height*img_width, neat_config.genome_config.num_outputs))
+            for idx, input in enumerate(cppn_input.view(-1, cppn_input.shape[-1])):
                 neat_cppn.reset()
                 for _ in range(recurrent_net_passes):
                     neat_cppn_output[idx, :] = neat_cppn.activate(input)[0]
-            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width)
+            neat_cppn_output = (1.0 - neat_cppn_output.abs()).cpu().detach().view(img_height, img_width, 1)
+            t1 = time.time()
+            print(f"NEAT CPPN calculation took {t1 - t0} secs")
 
-            assert torch.allclose(neat_cppn_output, pytorch_cppn_output)
+            assert torch.allclose(pytorch_cppn_output_1, pytorch_cppn_output_2)
+            assert torch.allclose(pytorch_cppn_output_3, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, pytorch_cppn_output_4)
+            assert torch.allclose(pytorch_cppn_output_2, neat_cppn_output)
+            assert torch.allclose(pytorch_cppn_output_4, neat_cppn_output)
             if show_plots:
-                fig = plt.subplots(1, 2)
-                plt.subplot(121)
-                plt.imshow(pytorch_cppn_output, cmap='gray')
+                fig = plt.subplots(1,3)
+                plt.subplot(131)
+                plt.imshow(pytorch_cppn_output_2, cmap='gray')
                 plt.axis("off")
-                plt.title("No connections at all: Pytorch-Neat")
-                plt.subplot(122)
+                plt.title("Pytorch-Neat Vectorized")
+                plt.subplot(132)
+                plt.imshow(pytorch_cppn_output_4, cmap='gray')
+                plt.axis("off")
+                plt.title("Pytorch-Neat Distributed")
+                plt.subplot(133)
                 plt.imshow(neat_cppn_output, cmap='gray')
                 plt.axis("off")
                 plt.title("Python-Neat")

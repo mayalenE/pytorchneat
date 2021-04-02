@@ -91,14 +91,7 @@ class TestRecurrentNetwork(TestCase):
                     plt.close()
 
                     # rewrite trained values in genome:
-                    for k, v in genome.nodes.items():
-                        v.bias = cppn_net.biases[str(k)].data
-                        v.responses = cppn_net.responses[str(k)].data
-                        v.activation = '_'.join(cppn_net.activation_functions[str(k)].__name__.split('_')[:-1])
-                        v.aggregation = '_'.join(cppn_net.aggregation_functions[str(k)].__name__.split('_')[:-1])
-                    for k, v in genome.connections.items():
-                        if v.enabled:
-                            v.weight = cppn_net.connections[rnn.tuple_to_str_key(k)].data
+                    cppn_net.update_genome(genome)
 
                 genomes_train_losses.append(train_losses)
                 genomes_train_images.append(train_images)
