@@ -6,6 +6,10 @@ from pytorchneat.aggregations import str_to_aggregation
 import copy
 import graphviz
 
+use_Minkowski_inputs = False
+if use_Minkowski_inputs:
+    import MinkowskiEngine as ME
+
 class RecurrentNetwork(nn.Module):
 
     def __init__(self, input_neuron_ids, hidden_neuron_ids, output_neuron_ids, biases, responses, activations, connections, device='cpu'):
@@ -171,14 +175,25 @@ class RecurrentNetwork(nn.Module):
         input_size = inputs.shape[:-1]
         batch_size = torch.prod(torch.tensor(input_size))
         assert inputs.shape[-1] == self.n_inputs
-        inputs = inputs.view(-1, self.n_inputs)
+
+        if isinstance(inputs, torch.Tensor):
+            forward_inputs = inputs.view(-1, self.n_inputs)
+        elif use_Minkowski_inputs:
+            forward_inputs = inputs.features
 
         self.hidden_activs = torch.zeros((batch_size, self.n_hidden)).to(self.device)
         self.output_activs = torch.zeros((batch_size, self.n_outputs)).to(self.device)
         for _ in range(n_passes):
-            outputs = self.forward(inputs)
+            outputs = self.forward(forward_inputs)
 
-        outputs = outputs.view(input_size + (self.n_outputs, ))
+        if isinstance(inputs, torch.Tensor):
+            outputs = outputs.view(input_size + (self.n_outputs, ))
+        elif use_Minkowski_inputs:
+            outputs = ME.SparseTensor(outputs,
+                                      coordinate_map_key=inputs.coordinate_map_key,
+                                      coordinate_manager=inputs.coordinate_manager,
+                                      )
+
         return outputs
 
 

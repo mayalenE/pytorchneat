@@ -10,6 +10,12 @@ import matplotlib.pyplot as plt
 import math
 import time
 
+use_Minkowski_inputs = False
+if use_Minkowski_inputs:
+    import MinkowskiEngine as ME
+    from MinkowskiEngine.MinkowskiFunctional import _wrap_tensor
+    import open3d as o3d
+    import numpy as np
 
 def delphineat_gauss_activation(z):
     '''Gauss activation as defined by SharpNEAT, which is also as in DelphiNEAT.'''
@@ -38,8 +44,20 @@ class TestRecurrentNetwork(TestCase):
         img_height = 56
         img_width = 56
         cppn_input = create_image_cppn_input((img_height, img_width))
+        if use_Minkowski_inputs:
+            coords = []
+            feats = []
+            for i in range(img_height):
+                for j in range(img_width):
+                    if torch.rand(()) < 0.7:
+                        coords.append(torch.tensor([i, j], dtype=torch.float64))
+                        feats.append(torch.tensor([i, j, cppn_input[i, j, 2], 1]))
+            cppn_input = ME.SparseTensor(torch.stack(feats), torch.stack(coords))
         mnist_dataset = torchvision.datasets.MNIST(root="/home/mayalen/data/pytorch_datasets/mnist/", download=False, train=True)
         upscale_target_tansform = transforms.Compose([transforms.ToPILImage(), transforms.Resize((img_height, img_width)), transforms.ToTensor()])
+
+        if use_Minkowski_inputs:
+            vis = o3d.visualization.Visualizer()
 
         for mnist_target_idx in range(1,21):
             if not os.path.exists('test_differentiability_outputs'):
@@ -57,6 +75,15 @@ class TestRecurrentNetwork(TestCase):
             plt.tight_layout()
             plt.savefig(os.path.join(cur_output_dir, 'target.png'))
             plt.close()
+            coords, feats = [], []
+
+            if use_Minkowski_inputs:
+                for i, row in enumerate(target_img):
+                    for j, val in enumerate(row):
+                        if val != 0:
+                            coords.append([i, j])
+                            feats.append([val])
+                target_img = ME.SparseTensor(features=torch.DoubleTensor(feats), coordinates=torch.IntTensor(coords), coordinate_manager=cppn_input.coordinate_manager)
 
             def eval_genomes(genomes, neat_config):
                 genomes_train_losses = []
@@ -70,13 +97,29 @@ class TestRecurrentNetwork(TestCase):
                     train_images = []
                     for train_step in range(45):
                         cppn_net_output = cppn_net.activate(cppn_input, 2)
-                        cppn_net_output = (1.0 - cppn_net_output.abs()).view(img_height, img_width)
-                        loss = (target_img - cppn_net_output).pow(2).sum()
+                        cppn_net_output
+                        if isinstance(cppn_net_output, torch.Tensor):
+                            cppn_net_output = (1.0 - cppn_net_output.abs()).view(img_height, img_width)
+                        elif use_Minkowski_inputs:
+                            cppn_net_output = _wrap_tensor(cppn_net_output, 1.0 - cppn_net_output.F.abs()) #.view(img_height, img_width)
+                        loss = (target_img - cppn_net_output).F.pow(2).sum()
                         opt.zero_grad()
                         loss.backward()
                         opt.step()
+
                         train_losses.append(loss.item())
-                        train_images.append(cppn_net_output.cpu().detach().unsqueeze(0))
+                        if isinstance(cppn_net_output, torch.Tensor):
+                            train_images.append(cppn_net_output.cpu().detach().unsqueeze(0))
+                        elif use_Minkowski_inputs:
+                            pcd = o3d.geometry.PointCloud()
+                            pcd.points = o3d.utility.Vector3dVector(torch.cat([cppn_net_output.C, torch.zeros([cppn_net_output.C.shape[0],1])], -1).cpu().detach())
+                            pcd.colors = o3d.utility.Vector3dVector(cppn_net_output.F.repeat(1,3).cpu().detach())
+                            #o3d.visualization.draw_geometries([pcd])
+                            vis.create_window('pcl', img_width, img_height, 50, 50, True)
+                            vis.add_geometry(pcd)
+                            #out_depth = vis.capture_depth_float_buffer(True)
+                            out_image = vis.capture_screen_float_buffer(True)
+                            train_images.append(torch.from_numpy(np.asarray(out_image)).transpose(0,-1))
                     t1 = time.time()
                     print(f"Training genome {genome_idx} took {t1-t0} secs")
 
@@ -107,5 +150,8 @@ class TestRecurrentNetwork(TestCase):
 
             n_generations = 10
             pop.run(eval_genomes, n_generations)
+
+            if use_Minkowski_inputs:
+                vis.close()
 
         return
