@@ -125,8 +125,8 @@ class RecurrentNetwork(nn.Module):
         batch_size = len(inputs)
         if inputs.device != self.device:
             inputs = inputs.to(self.device)
-        after_pass_hidden_activs = torch.zeros_like(self.hidden_activs).to(self.device)
-        after_pass_output_activs = torch.zeros_like(self.output_activs).to(self.device)
+        after_pass_hidden_activs = torch.zeros_like(self.hidden_activs.detach()).to(self.device)
+        after_pass_output_activs = torch.zeros_like(self.output_activs.detach()).to(self.device)
 
         # mask connection in case sparse 0 values have been changed during gradient descent
         self.input_to_hidden.data *= self.input_to_hidden_mask
@@ -155,9 +155,9 @@ class RecurrentNetwork(nn.Module):
 
         # Step 3: x = act(x)
         for hidden_neuron_idx in range(self.n_hidden):
-            after_pass_hidden_activs[:, hidden_neuron_idx] = self.hidden_activations[hidden_neuron_idx](after_pass_hidden_activs[:, hidden_neuron_idx])
+            after_pass_hidden_activs[:, hidden_neuron_idx] = self.hidden_activations[hidden_neuron_idx](after_pass_hidden_activs[:, hidden_neuron_idx].clone())
         for output_neuron_idx in range(self.n_outputs):
-            after_pass_output_activs[:, output_neuron_idx] = self.output_activations[output_neuron_idx](after_pass_output_activs[:, output_neuron_idx])
+            after_pass_output_activs[:, output_neuron_idx] = self.output_activations[output_neuron_idx](after_pass_output_activs[:, output_neuron_idx].clone())
 
 
         self.hidden_activs = self.hidden_mask * after_pass_hidden_activs
@@ -183,6 +183,7 @@ class RecurrentNetwork(nn.Module):
 
         self.hidden_activs = torch.zeros((batch_size, self.n_hidden)).to(self.device)
         self.output_activs = torch.zeros((batch_size, self.n_outputs)).to(self.device)
+
         for _ in range(n_passes):
             outputs = self.forward(forward_inputs)
 
