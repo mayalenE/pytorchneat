@@ -232,20 +232,26 @@ class RecurrentNetwork(nn.Module):
 
         for k, idx in self.hidden_key_to_idx.items():
             attrs = {'style': 'filled',
-                     'fillcolor': node_colors.get(n, 'white'),
+                     'fillcolor': node_colors.get(k, 'white'),
                      'fontsize': '9',
                      'xlabel': f'{self.hidden_activations[idx].__name__[:-11]}({self.hidden_biases[idx]:.1f}+\\n{self.hidden_responses[idx]:.1f}*sum(inputs))'}
 
             dot.node(str(k), _attributes=attrs)
 
         connections = {}
-        for from_k, to_k in torch.cat([torch.stack(torch.where(self.input_to_hidden)).t(),
-                                       torch.stack(torch.where(self.hidden_to_hidden)).t(),
-                                       torch.stack(torch.where(self.output_to_output)).t(),
-                                       torch.stack(torch.where(self.input_to_output)).t(),
-                                       torch.stack(torch.where(self.hidden_to_output)).t(),
-                                       torch.stack(torch.where(self.output_to_output)).t()]):
-            connections[(from_k.item(), to_k.item())] = self.input_to_hidden[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.input_to_hidden)).t():
+            connections[(list(self.input_key_to_idx.keys())[from_k.item()], list(self.hidden_key_to_idx.keys())[to_k.item()])] = self.input_to_hidden[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.hidden_to_hidden)).t():
+            connections[(list(self.hidden_key_to_idx.keys())[from_k.item()], list(self.hidden_key_to_idx.keys())[to_k.item()])] = self.hidden_to_hidden[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.output_to_hidden)).t():
+            connections[(list(self.output_key_to_idx.keys())[from_k.item()], list(self.hidden_key_to_idx.keys())[to_k.item()])] = self.output_to_hidden[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.input_to_output)).t():
+            connections[(list(self.input_key_to_idx.keys())[from_k.item()], list(self.output_key_to_idx.keys())[to_k.item()])] = self.input_to_output[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.hidden_to_output)).t():
+            connections[(list(self.hidden_key_to_idx.keys())[from_k.item()], list(self.output_key_to_idx.keys())[to_k.item()])] = self.hidden_to_output[from_k, to_k]
+        for from_k, to_k in torch.stack(torch.where(self.output_to_output)).t():
+            connections[(list(self.output_key_to_idx.keys())[from_k.item()], list(self.output_key_to_idx.keys())[to_k.item()])] = self.output_to_output[from_k, to_k]
+
         for cg, cg_weight in connections.items():
                 input = cg[0]
                 output = cg[1]
